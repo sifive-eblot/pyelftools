@@ -10,7 +10,7 @@ from .enums import (
     ENUM_D_TAG, ENUM_E_VERSION, ENUM_P_TYPE_BASE, ENUM_SH_TYPE_BASE,
     ENUM_RELOC_TYPE_i386, ENUM_RELOC_TYPE_x64,
     ENUM_RELOC_TYPE_ARM, ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_MIPS,
-    ENUM_ATTR_TAG_ARM, ENUM_DT_FLAGS, ENUM_DT_FLAGS_1)
+    ENUM_ATTR_TAG_ARM, ENUM_ATTR_TAG_RISCV, ENUM_DT_FLAGS, ENUM_DT_FLAGS_1)
 from .constants import (
     P_FLAGS, RH_FLAGS, SH_FLAGS, SUNW_SYMINFO_FLAGS, VER_FLAGS)
 from ..common.py3compat import iteritems
@@ -232,6 +232,24 @@ def describe_attr_tag_arm(tag, val, extra):
         return _DESCR_ATTR_TAG_ARM[tag] + d_entry[val]
 
 
+def describe_attr_tag_riscv(tag, val, extra):
+    idx = ENUM_ATTR_TAG_RISCV[tag] - 1
+    d_entry = _DESCR_ATTR_VAL_RISCV[idx]
+
+    if d_entry is None:
+        s = _DESCR_ATTR_TAG_RISCV[tag]
+        if tag == 'TAG_STACK_ALIGN':
+            # Note: 's' suffix may sound inconsistent with ARM counterpart, but
+            # this mimics binutils readelf output
+            s += '%d-bytes' % val
+        else:
+            s += '"%s"' % val if val else ''
+        return s
+
+    else:
+        return _DESCR_ATTR_TAG_RISCV[tag] + d_entry[val]
+
+
 #-------------------------------------------------------------------------------
 _unknown = '<unknown>'
 
@@ -303,6 +321,7 @@ _DESCR_E_MACHINE = dict(
     EM_AARCH64='AArch64',
     EM_BLACKFIN='Analog Devices Blackfin',
     EM_PPC='PowerPC',
+    EM_RISCV='RISC-V',
     RESERVED='RESERVED',
 )
 
@@ -398,6 +417,7 @@ _DESCR_SH_TYPE = dict(
     SHT_MIPS_XLATE_OLD='MIPS_XLATE_OLD',
     SHT_MIPS_PDR_EXCEPTION='MIPS_PDR_EXCEPTION',
     SHT_MIPS_ABIFLAGS='MIPS_ABIFLAGS',
+    SHT_RISCV_ATTRIBUTES='RISCV_ATTRIBUTES',
 )
 
 
@@ -857,4 +877,38 @@ _DESCR_ATTR_VAL_ARM = [
         0: 'Not Allowed',
         1: 'Allowed',
     },
+]
+
+
+# Note: RISCV prefix may sound inconsistent with ARM missing prefix, but
+# this mimics binutils readelf output
+_DESCR_ATTR_TAG_RISCV = dict(
+    TAG_FILE='File Attributes',
+    TAG_SECTION='Section Attributes:',
+    TAG_SYMBOL='Symbol Attributes:',
+    TAG_STACK_ALIGN='Tag_RISCV_stack_align: ',
+    TAG_ARCH='Tag_RISCV_Arch: ',
+    TAG_UNALIGNED_ACCESS='Tag_RISCV_unaligned_access: ',
+    TAG_PRIV_SPEC='Tag_RISCV_priv_spec: ',
+    TAG_PRIV_SPEC_MINOR='Tag_RISCV_priv_spec_minor: ',
+    TAG_PRIV_SPEC_REVISION='Tag_RISCV_priv_spec_revision: '
+)
+
+
+_DESCR_ATTR_VAL_RISCV = [
+    None, #1
+    None, #2
+    None, #3
+    None, #4 TAG_STACK_ALIGN
+    None, #5 TAG_ARCH
+    { #6 TAG_UNALIGNED_ACCESS
+        0: 'No unaligned access',
+        1: 'Unaligned access',
+    },
+    None, #7
+    None, #8 TAG_PRIV_SPEC_MINOR
+    None, #9
+    None, #10 TAG_PRIV_SPEC_MINOR
+    None, #11
+    None, #12 TAG_PRIV_SPEC_REVISION
 ]

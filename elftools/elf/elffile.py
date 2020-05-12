@@ -29,7 +29,7 @@ from .structs import ELFStructs
 from .sections import (
         Section, StringTableSection, SymbolTableSection,
         SymbolTableIndexSection, SUNWSyminfoTableSection, NullSection,
-        NoteSection, StabSection, ARMAttributesSection)
+        NoteSection, StabSection, ARMAttributesSection, RISCVAttributesSection)
 from .dynamic import DynamicSection, DynamicSegment
 from .relocation import RelocationSection, RelocationHandler
 from .gnuversions import (
@@ -581,6 +581,8 @@ class ELFFile(object):
             return StabSection(section_header, name, self)
         elif sectype == 'SHT_ARM_ATTRIBUTES':
             return ARMAttributesSection(section_header, name, self)
+        elif sectype == 'SHT_RISCV_ATTRIBUTES':
+            return RISCVAttributesSection(section_header, name, self)
         elif sectype == 'SHT_HASH':
             return self._make_elf_hash_section(section_header, name)
         elif sectype == 'SHT_GNU_HASH':

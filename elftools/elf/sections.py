@@ -10,6 +10,7 @@ from ..common.exceptions import ELFCompressionError
 from ..common.utils import struct_parse, elf_assert, parse_cstring_from_stream
 from collections import defaultdict
 from .constants import SH_FLAGS
+from .enums import ENUM_ATTR_TAG_RISCV
 from .notes import iter_notes
 
 import zlib
@@ -303,7 +304,7 @@ class ARMAttribute(object):
     """ ARM attribute object - representing a build attribute of ARM ELF files.
     """
     def __init__(self, structs, stream):
-        self._tag = struct_parse(structs.Elf_Attribute_Tag, stream)
+        self._tag = struct_parse(structs.Elf_ARM_Attribute_Tag, stream)
         self.extra = None
 
         if self.tag in ('TAG_FILE', 'TAG_SECTION', 'TAG_SYMBOL'):
@@ -351,15 +352,57 @@ class ARMAttribute(object):
         return s
 
 
-class ARMAttributesSubsubsection(object):
-    """ Subsubsection of an ELF .ARM.attributes section's subsection.
+class RISCVAttribute(object):
+    """ RISCV attribute object - representing a build attribute of RISCV ELF files.
     """
-    def __init__(self, stream, structs, offset):
+    def __init__(self, structs, stream):
+        self._tag = struct_parse(structs.Elf_RISCV_Attribute_Tag, stream)
+        self.extra = None
+
+        if self.tag in ('TAG_FILE', 'TAG_SECTION', 'TAG_SYMBOL'):
+            self.value = struct_parse(structs.Elf_word('value'), stream)
+
+            if self.tag != 'TAG_FILE':
+                self.extra = []
+                s_number = struct_parse(structs.Elf_uleb128('s_number'), stream)
+
+                while s_number != 0:
+                    self.extra.append(s_number)
+                    s_number = struct_parse(structs.Elf_uleb128('s_number'),
+                                            stream
+                               )
+        else:
+            # there is likely a better way to recover the tag value, maybe
+            # preserving it while parsing.
+            tag_value = ENUM_ATTR_TAG_RISCV[self.tag]
+            if tag_value & 1:
+                self.value = struct_parse(structs.Elf_ntbs('value',
+                                          encoding='utf-8'),
+                                          stream)
+
+            else:
+                self.value = struct_parse(structs.Elf_uleb128('value'), stream)
+
+    @property
+    def tag(self):
+        return self._tag['tag']
+
+    def __repr__(self):
+        s = '<RISCVAttribute (%s): %r>' % (self.tag, self.value)
+        s += ' %s' % self.extra if self.extra is not None else ''
+        return s
+
+
+class AttributesSubsubsection(object):
+    """ Subsubsection of an ELF .<arch>.attributes section's subsection.
+    """
+    def __init__(self, stream, structs, offset, attrcls):
         self.stream = stream
         self.offset = offset
         self.structs = structs
+        self.attrcls = attrcls
 
-        self.header = ARMAttribute(self.structs, self.stream)
+        self.header = self.attrcls(self.structs, self.stream)
 
         self.attr_start = self.stream.tell()
 
@@ -391,20 +434,21 @@ class ARMAttributesSubsubsection(object):
         self.stream.seek(self.attr_start)
 
         while self.stream.tell() != end:
-            yield ARMAttribute(self.structs, self.stream)
+            yield self.attrcls(self.structs, self.stream)
 
     def __repr__(self):
-        s = "<ARMAttributesSubsubsection (%s): %d bytes>"
+        s = "<AttributesSubsubsection (%s): %d bytes>"
         return s % (self.header.tag[4:], self.header.value)
 
 
-class ARMAttributesSubsection(object):
-    """ Subsection of an ELF .ARM.attributes section.
+class AttributesSubsection(object):
+    """ Subsection of an ELF .<arch>.attributes section.
     """
-    def __init__(self, stream, structs, offset):
+    def __init__(self, stream, structs, offset, attrcls):
         self.stream = stream
         self.offset = offset
         self.structs = structs
+        self.attrcls = attrcls
 
         self.header = struct_parse(self.structs.Elf_Attr_Subsection_Header,
                                    self.stream,
@@ -440,9 +484,10 @@ class ARMAttributesSubsection(object):
         self.stream.seek(self.subsubsec_start)
 
         while self.stream.tell() != end:
-            subsubsec = ARMAttributesSubsubsection(self.stream,
-                                                   self.structs,
-                                                   self.stream.tell())
+            subsubsec = AttributesSubsubsection(self.stream,
+                                                self.structs,
+                                                self.stream.tell(),
+                                                self.attrcls)
             self.stream.seek(self.subsubsec_start + subsubsec.header.value)
             yield subsubsec
 
@@ -452,16 +497,17 @@ class ARMAttributesSubsection(object):
         return self.header[name]
 
     def __repr__(self):
-        s = "<ARMAttributesSubsection (%s): %d bytes>"
+        s = "<AttributesSubsection (%s): %d bytes>"
         return s  % (self.header['vendor_name'], self.header['length'])
 
 
-class ARMAttributesSection(Section):
-    """ ELF .ARM.attributes section.
+class AttributesSection(Section):
+    """ ELF .<arch>.attributes section.
     """
-    def __init__(self, header, name, elffile):
-        super(ARMAttributesSection, self).__init__(header, name, elffile)
+    def __init__(self, header, name, elffile, attrcls):
+        super(AttributesSection, self).__init__(header, name, elffile)
 
+        self.attrcls = attrcls
         fv = struct_parse(self.structs.Elf_byte('format_version'),
                           self.stream,
                           self['sh_offset']
@@ -500,8 +546,23 @@ class ARMAttributesSection(Section):
         self.stream.seek(self.subsec_start)
 
         while self.stream.tell() != end:
-            subsec = ARMAttributesSubsection(self.stream,
-                                             self.structs,
-                                             self.stream.tell())
+            subsec = AttributesSubsection(self.stream,
+                                          self.structs,
+                                          self.stream.tell(),
+                                          self.attrcls)
             self.stream.seek(self.subsec_start + subsec['length'])
             yield subsec
+
+
+class ARMAttributesSection(AttributesSection):
+
+    def __init__(self, header, name, elffile):
+        super(ARMAttributesSection, self).__init__(header, name, elffile,
+                                                   ARMAttribute)
+
+
+class RISCVAttributesSection(AttributesSection):
+
+    def __init__(self, header, name, elffile):
+        super(RISCVAttributesSection, self).__init__(header, name, elffile,
+                                                     RISCVAttribute)
